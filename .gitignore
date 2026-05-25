@@ -1,2 +1,5 @@
 .venv
-/captures
+__pycache__
+/captures__pycache__/
+**/__pycache__/
+*.py[cod]
