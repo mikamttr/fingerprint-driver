@@ -7,20 +7,21 @@ def main():
 
     try:
         device.open()
-
         firmware, width, height = device.initialize()
 
         print(f"Firmware: {firmware}")
         print(f"Resolution: {width}x{height}")
-        print(f"RAW16 size: {width * height * 2} bytes")
 
         input("Place finger on sensor, then press Enter...")
 
-        raw = device.capture_raw()
-        raw_path, png_path = save_capture(raw, width, height)
+        for i in range(5):
+            raw = device.capture_raw()
+            print(f"Capture {i + 1}: {len(raw)} bytes")
 
-        print(f"Saved RAW: {raw_path}")
-        print(f"Saved PNG: {png_path}")
+            raw_path, png_path = save_capture(raw, width, height)
+            print(f"Saved: {png_path}")
+
+            input("Press Enter for next capture...")
 
     finally:
         device.close()

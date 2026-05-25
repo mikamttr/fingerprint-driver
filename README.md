@@ -5,43 +5,29 @@ Reverse engineering notes and Linux PoC for the FocalTech fingerprint stack.
 ## Target Device
 
 ```text
+Manufacturer : HOLTEK
+Product : FocalTech Fingerprint Device
 VID:PID = 2808:c652
 ```
 
-Observed USB device:
 
-```text
-Manufacturer : HOLTEK
-Product      : FocalTech Fingerprint Device
-```
+### Working:
+- [x] USB communication
+- [x] Packet TX/RX parsing
+- [x] Firmware read
+- [x] Heartbeat
+- [x] Alive check
+- [x] Device info read/write
+- [x] Scan image mode switching
+- [x] RAW image acquisition
+- [x] RAW16 → PNG conversion
+- [x] Linux/libusb PoC
 
----
-
-# Current Status
-
-Working:
-
-```text
-✓ USB communication
-✓ Packet TX/RX parsing
-✓ Firmware read
-✓ Heartbeat
-✓ Alive check
-✓ Device info read/write
-✓ Scan image mode switching
-✓ RAW image acquisition
-✓ RAW16 → PNG conversion
-✓ Linux/libusb PoC
-```
-
-Still unresolved:
-
-```text
-✗ Real wake-up sequence
-✗ Proper finger detection
-✗ Exact capture synchronization
-✗ Full RX protocol details
-```
+### Still unresolved:
+- [ ] Real wake-up sequence
+- [ ] Proper finger detection
+- [ ] Exact capture synchronization
+- [ ] Full RX protocol details
 
 ---
 
@@ -49,7 +35,7 @@ Still unresolved:
 
 ```text
 src/
-├── capture_loop.py
+├── capture.py
 └── focaltech/
     ├── __init__.py
     ├── device.py
@@ -424,7 +410,7 @@ The device currently returns stale frames.
 Observed behavior:
 
 ```text
-- removing finger often keeps previous frame
+- removing finger keeps previous frame
 - 0x5AA5 only means "frame available"
 - actual trigger sequence still unknown
 ```
@@ -437,7 +423,7 @@ FUN_180007fc0
 
 ---
 
-# Next Reverse Engineering Target
+# Next Steps
 
 Priority:
 
