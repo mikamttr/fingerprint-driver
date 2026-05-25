@@ -1,0 +1,4 @@
+libusb-package==1.0.26.1
+numpy==2.4.6
+pillow==12.2.0
+pyusb==1.3.1
