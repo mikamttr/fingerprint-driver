@@ -1,3 +1,5 @@
+#image.py - Image processing utilities for FocalTech fingerprint data.
+
 from pathlib import Path
 import time
 

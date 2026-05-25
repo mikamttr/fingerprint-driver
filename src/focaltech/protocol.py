@@ -1,3 +1,5 @@
+#protocol.py - FocalTech protocol implementation for communicating with the fingerprint sensor.
+
 STX = 0x02
 
 

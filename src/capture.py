@@ -1,3 +1,5 @@
+#capture.py - Capture raw fingerprint data and save as PNG images.
+
 from focaltech import FocalTechDevice
 from focaltech.image import save_capture
 

@@ -1,33 +1,43 @@
 # FocalTech Fingerprint Driver — Reverse Engineering
 
 Reverse engineering notes and Linux PoC for the FocalTech fingerprint stack.
+Based on reversing the Windows UMDF driver and rebuilding the protocol under Linux using `libusb`. 
 
-## Target Device
+---
+
+# Target Device
 
 ```text
 Manufacturer : HOLTEK
-Product : FocalTech Fingerprint Device
-VID:PID = 2808:c652
+Product      : FocalTech Fingerprint Device
+VID:PID      : 2808:c652
 ```
 
+---
+
+# Current Status
 
 ### Working:
 - [x] USB communication
 - [x] Packet TX/RX parsing
-- [x] Firmware read
-- [x] Heartbeat
-- [x] Alive check
+- [x] Firmware version read
+- [x] Heartbeat / alive checks
 - [x] Device info read/write
+- [x] STM wake-up sequence
 - [x] Scan image mode switching
 - [x] RAW image acquisition
-- [x] RAW16 → PNG conversion
+- [x] RAW16 to PNG conversion
 - [x] Linux/libusb PoC
 
-### Still unresolved:
-- [ ] Real wake-up sequence
+## Still Missing
+
 - [ ] Proper finger detection
-- [ ] Exact capture synchronization
-- [ ] Full RX protocol details
+- [ ] Real capture trigger sequence
+- [ ] Capture synchronization
+- [ ] Exact semantics of all device statuses
+- [ ] Full RX protocol coverage
+- [ ] Enrollment / matching pipeline
+- [ ] Windows biometric integration replacement
 
 ---
 
@@ -47,6 +57,13 @@ src/
 
 # USB Communication
 
+## Interface
+
+```text
+Interface : 0
+Class     : CDC Data
+```
+
 ## Endpoints
 
 ```text
@@ -54,9 +71,15 @@ OUT = 0x03
 IN  = 0x81
 ```
 
+## Transfer Type
+
+```text
+USB Bulk Transfer
+```
+
 ---
 
-# Packet Format
+# Packet Protocol
 
 Recovered from:
 
@@ -64,7 +87,7 @@ Recovered from:
 ProtocolWriteData
 ```
 
-Format:
+## TX Packet Format
 
 ```text
 [0]      = 0x02
@@ -75,7 +98,7 @@ Format:
 [last]   = XOR checksum
 ```
 
-Checksum:
+## Checksum
 
 ```text
 XOR of all bytes from LEN_H to end of payload
@@ -85,31 +108,30 @@ XOR of all bytes from LEN_H to end of payload
 
 # Confirmed Commands
 
-| CMD    | Description         |
-| ------ | ------------------- |
-| `0x30` | Firmware version    |
-| `0x35` | Heartbeat / wake-up |
-| `0x3D` | Sensor UID          |
-| `0x3F` | Upgrade counter     |
-| `0x40` | Touch keys state    |
-| `0x80` | Read device info    |
-| `0x81` | Capture RAW image   |
-| `0x82` | Alive check         |
-| `0x87` | Write device info   |
+| CMD    | Description       |
+| ------ | ----------------- |
+| `0x30` | Firmware version  |
+| `0x34` | STM status query  |
+| `0x35` | Heartbeat         |
+| `0x3D` | Sensor UID        |
+| `0x3F` | Upgrade counter   |
+| `0x40` | Touch keys state  |
+| `0x80` | Read device info  |
+| `0x81` | Capture RAW image |
+| `0x82` | Alive check       |
+| `0x87` | Write device info |
 
 ---
 
-# Important Commands
+# Firmware Version
 
-## Firmware Version
-
-TX:
+## TX
 
 ```text
 02 00 01 30 31
 ```
 
-Example response:
+## Example RX
 
 ```text
 APP_V0211_HT32_20250117
@@ -117,15 +139,15 @@ APP_V0211_HT32_20250117
 
 ---
 
-## Heartbeat
+# Heartbeat
 
-TX:
+## TX
 
 ```text
 02 00 01 35 34
 ```
 
-RX:
+## RX
 
 ```text
 55 BB
@@ -139,15 +161,15 @@ keepalive / wake-up
 
 ---
 
-## Alive Check
+# Alive Check
 
-TX:
+## TX
 
 ```text
 02 00 03 82 83 01 03
 ```
 
-RX:
+## RX
 
 ```text
 00
@@ -158,6 +180,62 @@ Purpose:
 ```text
 device ready check
 ```
+
+---
+
+# STM Wake-Up Sequence
+
+Recovered from:
+
+```text
+ff_sc_st_config_power_mode
+ff_sc_query_st_status
+ff_sc_DataWrite
+```
+
+## STM Status Query
+
+### TX
+
+```text
+CMD = 0x34
+```
+
+### Expected RX
+
+```text
+0xAA55
+```
+
+Meaning:
+
+```text
+STM ready
+```
+
+---
+
+## Raw Wake-Up Packet
+
+When STM is sleeping, Windows sends:
+
+```text
+00
+```
+
+Important:
+
+```text
+This is NOT wrapped in the FocalTech protocol.
+```
+
+It is sent directly through:
+
+```text
+USB bulk OUT transfer
+```
+
+Linux implementation now reproduces this behavior.
 
 ---
 
@@ -195,7 +273,9 @@ Response:
 0x50 = 80
 ```
 
-Final resolution:
+---
+
+## Final Resolution
 
 ```text
 64 × 80
@@ -203,7 +283,13 @@ Final resolution:
 
 ---
 
-## Device Status
+# Device Status
+
+Recovered from:
+
+```text
+ff_sc_query_device_status
+```
 
 Read through:
 
@@ -222,6 +308,49 @@ Meaning:
 
 ```text
 new frame available
+```
+
+Important:
+
+```text
+0x5AA5 does NOT mean "finger detected".
+```
+
+This explains stale frame behavior.
+
+---
+
+# Device Modes
+
+Recovered from:
+
+```text
+ff_sc_config_device_mode
+```
+
+| Mode ID | Name       |
+| ------- | ---------- |
+| `0`     | SENSOR     |
+| `1`     | POA        |
+| `6`     | SCAN_IMAGE |
+| `7`     | GESTURE    |
+
+---
+
+# Scan Image Mode
+
+Enabled through:
+
+```text
+CMD 0x87
+payload = [0x6C, 0x01, 0x6C]
+```
+
+Meaning:
+
+```text
+INFO_ID = 0x6C
+VALUE   = 0x6C
 ```
 
 ---
@@ -247,13 +376,13 @@ Format:
 
 ## Capture Command
 
-TX:
+### TX
 
 ```text
 02 00 01 81 80
 ```
 
-Returns:
+### RX
 
 ```text
 10240-byte RAW16 frame
@@ -261,7 +390,7 @@ Returns:
 
 ---
 
-# Image Processing
+# Image Processing Pipeline
 
 Current Linux pipeline:
 
@@ -282,42 +411,7 @@ Output:
 
 ---
 
-# Device Modes
-
-Recovered from:
-
-```text
-ff_sc_config_device_mode
-```
-
-| Mode ID | Name       |
-| ------- | ---------- |
-| `0`     | SENSOR     |
-| `1`     | POA        |
-| `6`     | SCAN_IMAGE |
-| `7`     | GESTURE    |
-
----
-
-## Scan Image Mode
-
-Enabled through:
-
-```text
-CMD 0x87
-payload = [0x6C, 0x01, 0x6C]
-```
-
-Meaning:
-
-```text
-INFO_ID = 0x6C
-VALUE   = 0x6C
-```
-
----
-
-# Scan Flow
+# Current Capture Flow
 
 Recovered from:
 
@@ -325,10 +419,10 @@ Recovered from:
 OnScanImage
 ```
 
-Observed flow:
+Observed Windows flow:
 
 ```text
-wake device
+wake STM
     ↓
 switch to scan image mode
     ↓
@@ -341,35 +435,30 @@ capture RAW frame
 convert RAW16 → grayscale
 ```
 
-Relevant functions:
-
-```text
-FUN_180007fc0  → wake-up sequence (unknown)
-FUN_180006874  → mode switching
-FUN_180007d00  → status polling
-ff_sc_GetImage → image acquisition
-```
-
 ---
 
-# Identified Functions
+# Important Recovered Functions
 
 ## FtWbioDriverUmdfV3.dll
 
-| Renamed Function            | Original Name   |
-| --------------------------- | --------------- |
-| `ff_sc_WriteData`           | `FUN_18000636c` |
-| `ff_sc_ReadData`            | `FUN_180005ac8` |
-| `ProtocolWriteData`         | `FUN_18000c7b0` |
-| `UsbBulkTransfer`           | `FUN_18000d70c` |
-| `ff_sc_GetImage`            | `FUN_180004f48` |
-| `ff_sc_ReadImageRawData`    | `FUN_180005cb0` |
-| `ConvertRaw16ToImage8`      | `FUN_180003e04` |
-| `ff_sc_ReadInfo_directly`   | `FUN_180005f00` |
-| `ff_sc_WriteInfo`           | `FUN_180006428` |
-| `ff_sc_config_device_mode`  | `FUN_180006874` |
-| `ff_sc_query_device_status` | `FUN_180007d00` |
-| `OnScanImage`               | `FUN_18000a604` |
+| Renamed Function             | Original Name   |
+| ---------------------------- | --------------- |
+| `ff_sc_WriteData`            | `FUN_18000636c` |
+| `ff_sc_ReadData`             | `FUN_180005ac8` |
+| `ProtocolWriteData`          | `FUN_18000c7b0` |
+| `ProtocolReadData`           | `FUN_18000c910` |
+| `ff_sc_DataWrite`            | `FUN_18000cca0` |
+| `UsbBulkTransfer`            | `FUN_18000d70c` |
+| `ff_sc_GetImage`             | `FUN_180004f48` |
+| `ff_sc_ReadImageRawData`     | `FUN_180005cb0` |
+| `ConvertRaw16ToImage8`       | `FUN_180003e04` |
+| `ff_sc_ReadInfo_directly`    | `FUN_180005f00` |
+| `ff_sc_WriteInfo`            | `FUN_180006428` |
+| `ff_sc_config_device_mode`   | `FUN_180006874` |
+| `ff_sc_query_device_status`  | `FUN_180007d00` |
+| `ff_sc_query_st_status`      | `FUN_180007ec0` |
+| `ff_sc_st_config_power_mode` | `FUN_180007fc0` |
+| `OnScanImage`                | `FUN_18000a604` |
 
 ---
 
@@ -405,43 +494,51 @@ Used for:
 
 # Current Limitation
 
-The device currently returns stale frames.
 
 Observed behavior:
-
-```text
 - removing finger keeps previous frame
 - 0x5AA5 only means "frame available"
-- actual trigger sequence still unknown
-```
+- capture command alone is insufficient
 
 Most likely caused by missing logic inside:
 
 ```text
-FUN_180007fc0
+ff_sc_st_config_power_mode
+```
+
+and/or:
+
+```text
+FUN_180007dec
+```
+
+which appears related to:
+
+```text
+finger presence detection
 ```
 
 ---
 
-# Next Steps
+# Next Reverse Engineering Target
 
-Priority:
+Priority target:
 
 ```text
-FUN_180007fc0
+FUN_180007dec
 ```
 
-Goal:
+Expected purpose:
 
 ```text
-recover real capture trigger / wake-up sequence
+finger detection / interrupt logic
 ```
 
 This should explain:
 
 ```text
+- automatic capture triggering
 - stale frame behavior
 - real finger detection
-- automatic capture triggering
 - synchronization logic
 ```

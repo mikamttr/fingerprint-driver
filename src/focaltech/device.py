@@ -1,3 +1,5 @@
+# device.py - FocalTech device communication and control logic.
+
 import time
 import usb.core
 import usb.util
@@ -11,6 +13,8 @@ INTERFACE = 0
 EP_OUT = 0x03
 EP_IN = 0x81
 USB_CHUNK_SIZE = 64
+
+STM_READY_STATUS = 0xAA55
 
 
 class FocalTechDevice:
@@ -81,6 +85,50 @@ class FocalTechDevice:
 
         return response_payload
 
+    def data_write(self, payload: bytes, timeout=1000) -> int:
+        """
+        Raw bulk OUT write without FocalTech packet framing.
+
+        Used by Windows ff_sc_DataWrite().
+        Wake-up sequence sends a single byte: 00.
+        """
+        return self.dev.write(EP_OUT, payload, timeout=timeout)
+
+    def query_st_status(self) -> int:
+        """
+        CMD 0x34 = ff_sc_query_st_status.
+
+        Expected ready value:
+            0xAA55
+        """
+        payload = self.command(0x34)
+
+        if len(payload) < 2:
+            raise RuntimeError("STM status response too short")
+
+        return int.from_bytes(payload[:2], "little")
+
+    def wake_stm(self, retries=10) -> bool:
+        """
+        Reproduces Windows ff_sc_st_config_power_mode(..., 0):
+
+        - query STM status with CMD 0x34
+        - if not ready, send raw bulk OUT 00
+        - Sleep(1 ms)
+        - retry up to 10 times
+        """
+        for _ in range(retries):
+            status = self.query_st_status()
+            print(f"STM status: 0x{status:04x}")
+
+            if status == STM_READY_STATUS:
+                return True
+
+            self.data_write(bytes([0x00]))
+            time.sleep(0.001)
+
+        return False
+
     def get_firmware_version(self) -> str:
         payload = self.command(0x30)
         return payload.decode(errors="replace")
@@ -111,11 +159,15 @@ class FocalTechDevice:
             return b""
 
     def initialize(self):
+        self.wake_stm()
+
         firmware = self.get_firmware_version()
         self.heartbeat()
         self.check_alive()
         self.read_info(0x07, 1)
+
         width, height = self.read_resolution()
+
         self.set_scan_image_mode()
 
         return firmware, width, height
@@ -123,5 +175,7 @@ class FocalTechDevice:
     def capture_raw(self, timeout=5000) -> bytes:
         if self.width is None or self.height is None:
             self.read_resolution()
+
+        self.wake_stm()
 
         return self.command(0x81, timeout=timeout)
