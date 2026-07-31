@@ -1,5 +1,6 @@
 # capture.py - Automatically capture fingerprints when a finger is detected.
 
+from time import time
 from focaltech import FocalTechDevice
 from focaltech.image import save_capture
 
