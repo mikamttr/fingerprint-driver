@@ -184,7 +184,7 @@ class FocalTechDevice:
         if len(payload) < 1:
             raise RuntimeError("Finger status response is empty")
 
-        print(f"Finger status: 0x{payload[0]:02x}") #debug
+        # print(f"Finger status: 0x{payload[0]:02x}") #debug
         return payload[0] == 0x01
 
     def wait_for_finger(self, poll_interval: float = 0.02) -> None:
@@ -203,11 +203,12 @@ class FocalTechDevice:
             timeout=5000,
         )
 
-        expected_size = self.width * self.height * 2
+        pixel_count = self.width * self.height
 
-        if len(raw) != expected_size:
+        if len(raw) not in (pixel_count, pixel_count * 2):
             raise RuntimeError(
-                f"Invalid RAW size: {len(raw)}, expected {expected_size}"
+                f"Unexpected RAW size: {len(raw)} bytes "
+                f"for a {self.width}x{self.height} sensor"
             )
 
         return raw
