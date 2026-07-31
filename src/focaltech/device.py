@@ -138,6 +138,9 @@ class FocalTechDevice:
 
     def check_alive(self) -> bytes:
         return self.command(0x82, bytes([0x83, 0x01]))
+    
+    def clear_sensor_data(self) -> bytes:
+        return self.command(0x82, bytes([0x78]))
 
     def read_info(self, info_id: int, length: int = 1) -> bytes:
         return self.command(0x80, bytes([info_id & 0xFF, length & 0xFF]))
@@ -172,10 +175,39 @@ class FocalTechDevice:
 
         return firmware, width, height
 
-    def capture_raw(self, timeout=5000) -> bytes:
+    def query_finger_status(self) -> bool:
+        payload = self.command(
+            0x80,
+            bytes([0x02]),
+        )
+
+        if len(payload) < 1:
+            raise RuntimeError("Finger status response is empty")
+
+        print(f"Finger status: 0x{payload[0]:02x}") #debug
+        return payload[0] == 0x01
+
+    def wait_for_finger(self, poll_interval: float = 0.02) -> None:
+        while not self.query_finger_status():
+            time.sleep(poll_interval)
+
+    def capture_raw(self) -> bytes:
         if self.width is None or self.height is None:
-            self.read_resolution()
+            raise RuntimeError("Device resolution is not initialized")
 
-        self.wake_stm()
+        self.wait_for_finger()
 
-        return self.command(0x81, timeout=timeout)
+        raw = self.command(
+            0x81,
+            b"",
+            timeout=5000,
+        )
+
+        expected_size = self.width * self.height * 2
+
+        if len(raw) != expected_size:
+            raise RuntimeError(
+                f"Invalid RAW size: {len(raw)}, expected {expected_size}"
+            )
+
+        return raw
